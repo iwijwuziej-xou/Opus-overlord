@@ -1,3 +1,3 @@
 # Opus-overlord
 
-any website that uses opus codec will be used by this script
+this script monkey bars over the Opus Codec system.
