@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Universal Media Stream Optimizer
 // @namespace    http://tampermonkey.net/
-// @version      14.0
-// @description  Adaptive Hardware-Aware Optimization for Professional Audio/Video Interfaces.
+// @version      14.1
+// @description  Hard-Locked High-Performance Optimization for Professional Audio/Video Interfaces.
 // @author       JavaScript Einstein
 // @match        *://*/*
 // @grant        none
@@ -13,8 +13,7 @@
     'use strict';
 
     const VIDEO_BITRATE_PPS = 8000000;
-    const AUDIO_BITRATE_ULTRA = 384000;
-    const AUDIO_BITRATE_STANDARD = 384000;
+    const AUDIO_BITRATE_FORCE = 384000;
 
     const applyHardwareConstraints = (c) => {
         if (c.audio) {
@@ -28,7 +27,7 @@
                 googHighpassFilter: false,
                 googTypingNoiseDetection: false,
                 channelCount: { exact: 2 },
-                sampleRate: { ideal: 48000, min: 48000 },
+                sampleRate: { ideal: 48000 },
                 latency: 0,
                 voiceIsolation: 'none'
             };
@@ -62,11 +61,9 @@
         }
         l = l.map(x => {
             if (x.includes('a=fmtp:') && x.includes('opus')) {
-                const h = x.includes('maxplaybackrate=48000') || s.includes('48000');
-                const b = h ? AUDIO_BITRATE_ULTRA : AUDIO_BITRATE_STANDARD;
-                const r = h ? 48000 : 48000;
-                let res = x.replace(/maxaveragebitrate=\d+/, `maxaveragebitrate=${b}`).replace(/maxplaybackrate=\d+/, `maxplaybackrate=${r}`);
-                if (!res.includes('stereo=1')) res += `;stereo=1;sprop-stereo=1;cbr=1;useinbandfec=0;usedtx=0;sprop-maxcapturerate=${r}`;
+                let res = x.replace(/maxaveragebitrate=\d+/, `maxaveragebitrate=${AUDIO_BITRATE_FORCE}`)
+                           .replace(/maxplaybackrate=\d+/, `maxplaybackrate=48000`);
+                if (!res.includes('stereo=1')) res += `;stereo=1;sprop-stereo=1;cbr=1;useinbandfec=0;usedtx=0;sprop-maxcapturerate=48000`;
                 return res;
             }
             return x;
