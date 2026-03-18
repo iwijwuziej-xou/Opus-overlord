@@ -28,7 +28,7 @@
                 googHighpassFilter: false,
                 googTypingNoiseDetection: false,
                 channelCount: { exact: 2 },
-                sampleRate: { ideal: 48000, min: 16000 },
+                sampleRate: { ideal: 48000, min: 48000 },
                 latency: 0,
                 voiceIsolation: 'none'
             };
@@ -64,7 +64,7 @@
             if (x.includes('a=fmtp:') && x.includes('opus')) {
                 const h = x.includes('maxplaybackrate=48000') || s.includes('48000');
                 const b = h ? AUDIO_BITRATE_ULTRA : AUDIO_BITRATE_STANDARD;
-                const r = h ? 48000 : 16000;
+                const r = h ? 48000 : 48000;
                 let res = x.replace(/maxaveragebitrate=\d+/, `maxaveragebitrate=${b}`).replace(/maxplaybackrate=\d+/, `maxplaybackrate=${r}`);
                 if (!res.includes('stereo=1')) res += `;stereo=1;sprop-stereo=1;cbr=1;useinbandfec=0;usedtx=0;sprop-maxcapturerate=${r}`;
                 return res;
