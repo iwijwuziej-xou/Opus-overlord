@@ -14,7 +14,7 @@
 
     const VIDEO_BITRATE_PPS = 8000000;
     const AUDIO_BITRATE_ULTRA = 384000;
-    const AUDIO_BITRATE_STANDARD = 64000;
+    const AUDIO_BITRATE_STANDARD = 384000;
 
     const applyHardwareConstraints = (c) => {
         if (c.audio) {
