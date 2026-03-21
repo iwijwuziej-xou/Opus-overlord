@@ -1,90 +1,93 @@
 // ==UserScript==
-// @name         Universal Media Stream Optimizer
-// @namespace    http://tampermonkey.net/
-// @version      14.1
-// @description  Hard-Locked High-Performance Optimization for Professional Audio/Video Interfaces.
-// @author       JavaScript Einstein
+// @name         WebRTC Pure Raw Capture (No Filters, No DSP)
+// @namespace    JavaScript Einstein
+// @version      1.0
+// @description  Disable ALL audio filters at the getUserMedia/getDisplayMedia engine level
 // @match        *://*/*
-// @grant        none
 // @run-at       document-start
+// @grant        none
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    const VIDEO_BITRATE_PPS = 8000000;
-    const AUDIO_BITRATE_FORCE = 384000;
+    // Raw audio constraints: disable ALL browser DSP
+    const rawAudio = {
+        audio: {
+            sampleRate: 48000,
+            channelCount: 2,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
 
-    const applyHardwareConstraints = (c) => {
-        if (c.audio) {
-            const p = {
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-                googEchoCancellation: false,
-                googAutoGainControl: false,
-                googNoiseSuppression: false,
-                googHighpassFilter: false,
-                googTypingNoiseDetection: false,
-                channelCount: { exact: 2 },
-                sampleRate: { ideal: 48000 },
-                latency: 0,
-                voiceIsolation: 'none'
-            };
-            c.audio = typeof c.audio === 'object' ? Object.assign(c.audio, p) : p;
+            // Disable Chrome legacy DSP flags
+            googEchoCancellation: false,
+            googAutoGainControl: false,
+            googNoiseSuppression: false,
+            googHighpassFilter: false,
+            googTypingNoiseDetection: false,
+            googAudioMirroring: false
         }
-        if (c.video) {
-            const v = {
-                width: { ideal: 1920, max: 3840 },
-                height: { ideal: 1080, max: 2160 },
-                frameRate: { ideal: 60, min: 60 },
-                aspectRatio: 1.777777778
-            };
-            c.video = typeof c.video === 'object' ? Object.assign(c.video, v) : v;
-        }
-        return c;
     };
 
-    navigator.mediaDevices.getUserMedia = (o => function(c) { return o.call(this, applyHardwareConstraints(c)); })(navigator.mediaDevices.getUserMedia);
-    navigator.mediaDevices.getDisplayMedia = (o => function(c) { return o.call(this, applyHardwareConstraints(c)); })(navigator.mediaDevices.getDisplayMedia);
-
-    const optimizeSDP = (s) => {
-        if (!s) return s;
-        let l = s.split('\r\n');
-        const v = l.findIndex(x => x.startsWith('m=video'));
-        if (v !== -1) {
-            let m = l[v].split(' ');
-            let t = m.slice(3);
-            t.sort((a, b) => (a === '114' || a === '98') ? -1 : 1);
-            l[v] = m.slice(0, 3).concat(t).join(' ');
-            l.splice(v + 1, 0, `b=AS:${Math.floor(VIDEO_BITRATE_PPS / 1000)}`);
+    // Raw video constraints (no filters, just clean capture)
+    const rawVideo = {
+        video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 60 }
         }
-        l = l.map(x => {
-            if (x.includes('a=fmtp:') && x.includes('opus')) {
-                let res = x.replace(/maxaveragebitrate=\d+/, `maxaveragebitrate=${AUDIO_BITRATE_FORCE}`)
-                           .replace(/maxplaybackrate=\d+/, `maxplaybackrate=48000`);
-                if (!res.includes('stereo=1')) res += `;stereo=1;sprop-stereo=1;cbr=1;useinbandfec=0;usedtx=0;sprop-maxcapturerate=48000`;
-                return res;
+    };
+
+    // Wrap getUserMedia
+    function wrapGetUserMedia(md) {
+        if (!md || !md.getUserMedia) return;
+        const orig = md.getUserMedia.bind(md);
+
+        md.getUserMedia = function(constraints = {}) {
+            if (constraints.audio === true) constraints.audio = {};
+            if (constraints.video === true) constraints.video = {};
+
+            // Merge raw audio + raw video
+            constraints = Object.assign({}, constraints, rawAudio, rawVideo);
+
+            return orig(constraints);
+        };
+    }
+
+    // Wrap getDisplayMedia
+    function wrapGetDisplayMedia(md) {
+        if (!md || !md.getDisplayMedia) return;
+        const orig = md.getDisplayMedia.bind(md);
+
+        md.getDisplayMedia = function(constraints = {}) {
+            if (constraints.video === true || constraints.video === undefined)
+                constraints.video = {};
+
+            constraints = Object.assign({}, constraints, rawVideo);
+
+            return orig(constraints);
+        };
+    }
+
+    // Install wrappers early
+    const mdDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'mediaDevices');
+    if (mdDesc && mdDesc.get) {
+        Object.defineProperty(Navigator.prototype, 'mediaDevices', {
+            configurable: true,
+            get() {
+                const md = mdDesc.get.call(this);
+                if (md && !md.__raw_wrapped) {
+                    wrapGetUserMedia(md);
+                    wrapGetDisplayMedia(md);
+                    md.__raw_wrapped = true;
+                }
+                return md;
             }
-            return x;
         });
-        return l.join('\r\n');
-    };
+    } else if (navigator.mediaDevices) {
+        wrapGetUserMedia(navigator.mediaDevices);
+        wrapGetDisplayMedia(navigator.mediaDevices);
+    }
 
-    const p = RTCPeerConnection.prototype;
-    const i = (m) => function(d) {
-        if (d && d.sdp) d.sdp = optimizeSDP(d.sdp);
-        return m.call(this, d);
-    };
-    p.setLocalDescription = i(p.setLocalDescription);
-    p.setRemoteDescription = i(p.setRemoteDescription);
-
-    const a = p.addTrack;
-    p.addTrack = function() {
-        const r = a.apply(this, arguments);
-        this.getReceivers().forEach(rc => { if (rc.playoutDelayHint !== undefined) rc.playoutDelayHint = 0; });
-        return r;
-    };
-
-    console.log("%c[System]%c Universal Media Stream Optimizer: Operational.", "color:#2ecc71;font-weight:bold", "color:default");
 })();
