@@ -1,92 +1,97 @@
 // ==UserScript==
-// @name         Global Media Overrider (Stereo & Mirroring)
+// @name         Pure Filterless Mic & DisplayMedia
 // @namespace    http://tampermonkey.net/
-// @version      1.7
-// @description  Forces 1080p60, Raw Stereo Audio, and googAudioMirroring
-// @author       Partner
+// @version      4.0
+// @description  Strictly patches getUserMedia and getDisplayMedia for raw, filterless, mirrored stereo.
+// @author       Gemini Coder
 // @match        *://*/*
-// @grant        none
+// @grant        unsafeWindow
 // @run-at       document-start
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // Brainstorming the "Enforcement" Targets:
-    // We disable all 'goog' filters and force channelCount to 2 for Stereo.
-    const AUDIO_RAW_STEREO = {
-        // Standard W3C (Modern Standards)
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: { ideal: 2, min: 2 },
-        
-        // Chromium Internal (The "Secret Sauce" for Raw Audio)
-        googAudioMirroring: true, // Forces 1:1 hardware mirroring
-        googAutoGainControl: false,
-        googAutoGainControl2: false,
-        googEchoCancellation: false,
-        googNoiseSuppression: false,
-        googHighpassFilter: false,
-        googTypingNoiseDetection: false,
-        googNoiseReduction: false,
-        
-        // Quality parameters
-        latency: 0,
-        sampleRate: 48000,
-        sampleSize: 16
-    };
+    // Accessing the real window to ensure our patch hits the browser's native code
+    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    const VIDEO_HQ = {
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        frameRate: { ideal: 60 },
-        aspectRatio: { ideal: 1.7777777778 }
-    };
+    /**
+     * BRAINSTORMING THE CORE CONSTRAINTS:
+     * To ensure "Filterless" operation while maintaining stereo integrity:
+     * - We disable all standard processing (EC, NS, AGC).
+     * - We disable all Chromium-specific processing (Highpass, Typing detection).
+     * - We force 'googAudioMirroring' to TRUE to protect the stereo field.
+     */
+    const getFilterlessConstraints = (constraints) => {
+        if (!constraints || !constraints.audio) return constraints;
 
-    const patch = (constraints, isScreen) => {
-        if (!constraints) return constraints;
-        
-        // Deep clone to ensure we don't pollute the original object context
-        const c = JSON.parse(JSON.stringify(constraints));
+        const rawAudioSettings = {
+            // Disable all standard WebIDL filters
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
 
-        // Force Stereo & Mirroring
-        if (c.audio) {
-            if (typeof c.audio === 'boolean' || typeof c.audio === 'object') {
-                c.audio = typeof c.audio === 'object' ? { ...c.audio, ...AUDIO_RAW_STEREO } : AUDIO_RAW_STEREO;
-            }
-        }
+            // Disable all internal Chromium filters
+            googEchoCancellation: false,
+            googAutoGainControl: false,
+            googAutoGainControl2: false,
+            googNoiseSuppression: false,
+            googHighpassFilter: false,
+            googTypingNoiseDetection: false,
+            googNoiseReduction: false,
 
-        // Force 1080p60
-        if (c.video) {
-            // For screen share, we force full 1080p60. 
-            // For webcams, we prioritize 60fps fluidity.
-            const videoBase = isScreen ? VIDEO_HQ : { frameRate: { ideal: 60 } };
-            c.video = typeof c.video === 'object' ? { ...c.video, ...videoBase } : videoBase;
-        }
-
-        return c;
-    };
-
-    // --- PROXY INTERCEPTION ---
-    // Sitting directly on the MediaDevices prototype ensures no site can bypass us.
-
-    if (navigator.mediaDevices) {
-        // Intercept Mic/Cam (getUserMedia)
-        const originalGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getUserMedia = async function(c) {
-            console.log('%c[MediaOverride] Mic/Cam -> Forcing Raw Stereo & Mirroring', 'color: #00ff00; font-weight: bold;');
-            return originalGUM(patch(c, false));
+            // Maintain Stereo/Raw integrity
+            googAudioMirroring: true, 
+            channelCount: { ideal: 2, exact: 2 },
+            sampleRate: { ideal: 48000 },
+            
+            // Performance/Latency
+            latency: 0
         };
 
-        // Intercept Screen Share (getDisplayMedia)
-        const originalGDM = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getDisplayMedia = async function(c) {
-            console.log('%c[MediaOverride] Screen Share -> Forcing 1080p60 & Stereo', 'color: #00d4ff; font-weight: bold;');
-            return originalGDM(patch(c, true));
+        // If audio was just 'true', replace with our object. 
+        // If it was an object, merge our raw settings over their requests.
+        if (typeof constraints.audio === 'boolean') {
+            constraints.audio = rawAudioSettings;
+        } else {
+            Object.assign(constraints.audio, rawAudioSettings);
+        }
+
+        return constraints;
+    };
+
+    // --- PATCH 1: Modern MediaDevices API ---
+    if (win.navigator.mediaDevices) {
+        // Patching Microphone/Camera access
+        const originalGUM = win.navigator.mediaDevices.getUserMedia.bind(win.navigator.mediaDevices);
+        win.navigator.mediaDevices.getUserMedia = function(constraints) {
+            const patched = getFilterlessConstraints(constraints);
+            console.log('[FILTERLESS] getUserMedia (Mic) triggered:', patched);
+            return originalGUM(patched);
+        };
+
+        // Patching Screen Share/System Audio access
+        const originalGDM = win.navigator.mediaDevices.getDisplayMedia.bind(win.navigator.mediaDevices);
+        win.navigator.mediaDevices.getDisplayMedia = function(constraints) {
+            const patched = getFilterlessConstraints(constraints);
+            console.log('[FILTERLESS] getDisplayMedia (Display) triggered:', patched);
+            return originalGDM(patched);
         };
     }
 
-    console.log('%c[Partner] v1.7 Active: Stereo Support + Mirroring Enabled Globally.', 'color: #fff; background: #222; padding: 3px; border-radius: 4px;');
+    // --- PATCH 2: Legacy Navigator methods (Webkit support) ---
+    const legacyMethods = ['getUserMedia', 'webkitGetUserMedia', 'mozGetUserMedia'];
+    legacyMethods.forEach(method => {
+        if (win.navigator[method]) {
+            const original = win.navigator[method].bind(win.navigator);
+            win.navigator[method] = function(constraints, success, failure) {
+                const patched = getFilterlessConstraints(constraints);
+                return original(patched, success, failure);
+            };
+        }
+    });
+
+    console.log('[FILTERLESS] Initialization complete. Mic and DisplayMedia are now raw.');
+
 })();
 
