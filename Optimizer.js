@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Media Stream Constraints Overrider (Max Quality)
+// @name         Media Stream Overrider (Screen/Mic/Cam)
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Forces 1080p60 Screen Capture and Filterless Raw Audio
+// @version      1.3
+// @description  Targets Screen Share (1080p60) and Mic/Cam (Raw Filterless)
 // @author       Partner
 // @match        *://*/*
 // @grant        none
@@ -12,17 +12,12 @@
 (function() {
     'use strict';
 
-    // Brainstorming Logic: 
-    // 1. We use "ideal" for resolution to avoid hardware mismatch errors.
-    // 2. We use "exact: false" for filters to tell Chromium "DO NOT PROCESS THIS."
-    // 3. We include legacy 'goog' flags because Chrome's internal engine still references them.
-
-    const RAW_AUDIO_CONSTRAINTS = {
-        echoCancellation: { daily: false, exact: false },
-        noiseSuppression: { daily: false, exact: false },
-        autoGainControl: { daily: false, exact: false },
-        channelCount: { ideal: 2 },
-        // Chromium Internal Overrides
+    // 1. RAW AUDIO LOGIC (Mic/Cam)
+    // We disable every software processing flag Chromium has.
+    const RAW_AUDIO = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
         googAudioMirroring: true,
         googAutoGainControl: false,
         googAutoGainControl2: false,
@@ -31,70 +26,61 @@
         googNoiseSuppression: false,
         googTypingNoiseDetection: false,
         googNoiseReduction: false,
-        latency: 0,
-        sampleRate: 48000,
-        sampleSize: 16
+        channelCount: 2, // Force Stereo
+        latency: 0
     };
 
-    const HQ_VIDEO_CONSTRAINTS = {
-        width: { ideal: 1920, max: 1920 },
-        height: { ideal: 1080, max: 1080 },
-        frameRate: { ideal: 60, max: 60 },
+    // 2. HQ VIDEO LOGIC (Screen Share)
+    // We push for 1080p and 60fps specifically.
+    const HQ_SCREEN = {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 60 },
         aspectRatio: { ideal: 1.7777777778 }
     };
 
-    const patchConstraints = (constraints, isDisplay) => {
-        const modified = JSON.parse(JSON.stringify(constraints || {}));
+    const modify = (constraints, isScreen) => {
+        if (!constraints) return constraints;
 
-        // Force Mic to be filterless
-        if (modified.audio) {
-            if (typeof modified.audio === 'boolean') {
-                modified.audio = RAW_AUDIO_CONSTRAINTS;
+        // Apply Audio Overrides
+        if (constraints.audio) {
+            if (typeof constraints.audio === 'boolean') {
+                constraints.audio = RAW_AUDIO;
             } else {
-                Object.assign(modified.audio, RAW_AUDIO_CONSTRAINTS);
+                Object.assign(constraints.audio, RAW_AUDIO);
             }
         }
 
-        // Force Screen/Video to 1080p60
-        if (isDisplay) {
-            if (!modified.video || typeof modified.video === 'boolean') {
-                modified.video = HQ_VIDEO_CONSTRAINTS;
+        // Apply Screen Video Overrides
+        if (isScreen && constraints.video) {
+            if (typeof constraints.video === 'boolean') {
+                constraints.video = HQ_SCREEN;
             } else {
-                Object.assign(modified.video, HQ_VIDEO_CONSTRAINTS);
+                Object.assign(constraints.video, HQ_SCREEN);
             }
         }
 
-        return modified;
+        return constraints;
     };
 
-    // --- EXECUTION ---
+    // --- INTERCEPTORS ---
 
     if (navigator.mediaDevices) {
-        // Handle Screen Share (getDisplayMedia)
-        const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getDisplayMedia = async function(c) {
-            console.log('%c[MediaOverride] Forcing 1080p60 Screen Capture...', 'color: #00d4ff');
-            try {
-                return await originalGetDisplayMedia(patchConstraints(c, true));
-            } catch (e) {
-                console.warn('[MediaOverride] Max settings failed, falling back to default.', e);
-                return originalGetDisplayMedia(c);
-            }
+        // Target: Mic and Camera
+        const ogGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (c) => {
+            console.log('%c[MediaOverride] Targeting Mic/Cam...', 'color: #00ff00');
+            return ogGUM(modify(c, false));
         };
 
-        // Handle Mic/Cam (getUserMedia)
-        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getUserMedia = async function(c) {
-            console.log('%c[MediaOverride] Forcing Raw Filterless Audio...', 'color: #00ff00');
-            try {
-                return await originalGetUserMedia(patchConstraints(c, false));
-            } catch (e) {
-                console.warn('[MediaOverride] Filter removal failed, falling back to default.', e);
-                return originalGetUserMedia(c);
-            }
+        // Target: Screen Share
+        const ogGDM = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getDisplayMedia = async (c) => {
+            console.log('%c[MediaOverride] Targeting Screen Share (1080p60)...', 'color: #00d4ff');
+            return ogGDM(modify(c, true));
         };
     }
 
-    console.log('%c[MediaOverride] Partner Script Loaded. Targets: getDisplayMedia & getUserMedia.', 'background: #222; color: #bada55');
+    console.log('%c[MediaOverride] Ready. Monitoring Screen, Mic, and Camera requests.', 'font-weight: bold; color: #bada55');
 })();
 
