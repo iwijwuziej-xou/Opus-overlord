@@ -1,93 +1,71 @@
 // ==UserScript==
-// @name         WebRTC Pure Raw Capture (No Filters, No DSP)
-// @namespace    JavaScript Einstein
+// @name         Media Stream Constraints Overrider
+// @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  Disable ALL audio filters at the getUserMedia/getDisplayMedia engine level
+// @description  Forces raw stereo audio and 1080p60 screen capture
+// @author       Partner
 // @match        *://*/*
-// @run-at       document-start
 // @grant        none
+// @run-at       document-start
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // Raw audio constraints: disable ALL browser DSP
-    const rawAudio = {
-        audio: {
-            sampleRate: 48000,
-            channelCount: 2,
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
+    // Helper to deep merge or override constraints
+    const modifyConstraints = (constraints, isDisplay = false) => {
+        if (!constraints) constraints = {};
 
-            // Disable Chrome legacy DSP flags
-            googEchoCancellation: false,
-            googAutoGainControl: false,
-            googNoiseSuppression: false,
-            googHighpassFilter: false,
-            googTypingNoiseDetection: false,
-            googAudioMirroring: false
-        }
-    };
+        // 1. Handle Audio Constraints (Specific to getUserMedia)
+        if (constraints.audio) {
+            const audioDefaults = {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                googAudioMirroring: true, // Specific for stereo/mirroring in Chromium
+                channelCount: 2
+            };
 
-    // Raw video constraints (no filters, just clean capture)
-    const rawVideo = {
-        video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            frameRate: { ideal: 60 }
-        }
-    };
-
-    // Wrap getUserMedia
-    function wrapGetUserMedia(md) {
-        if (!md || !md.getUserMedia) return;
-        const orig = md.getUserMedia.bind(md);
-
-        md.getUserMedia = function(constraints = {}) {
-            if (constraints.audio === true) constraints.audio = {};
-            if (constraints.video === true) constraints.video = {};
-
-            // Merge raw audio + raw video
-            constraints = Object.assign({}, constraints, rawAudio, rawVideo);
-
-            return orig(constraints);
-        };
-    }
-
-    // Wrap getDisplayMedia
-    function wrapGetDisplayMedia(md) {
-        if (!md || !md.getDisplayMedia) return;
-        const orig = md.getDisplayMedia.bind(md);
-
-        md.getDisplayMedia = function(constraints = {}) {
-            if (constraints.video === true || constraints.video === undefined)
-                constraints.video = {};
-
-            constraints = Object.assign({}, constraints, rawVideo);
-
-            return orig(constraints);
-        };
-    }
-
-    // Install wrappers early
-    const mdDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'mediaDevices');
-    if (mdDesc && mdDesc.get) {
-        Object.defineProperty(Navigator.prototype, 'mediaDevices', {
-            configurable: true,
-            get() {
-                const md = mdDesc.get.call(this);
-                if (md && !md.__raw_wrapped) {
-                    wrapGetUserMedia(md);
-                    wrapGetDisplayMedia(md);
-                    md.__raw_wrapped = true;
-                }
-                return md;
+            if (typeof constraints.audio === 'boolean') {
+                constraints.audio = audioDefaults;
+            } else {
+                Object.assign(constraints.audio, audioDefaults);
             }
-        });
-    } else if (navigator.mediaDevices) {
-        wrapGetUserMedia(navigator.mediaDevices);
-        wrapGetDisplayMedia(navigator.mediaDevices);
-    }
+        }
 
+        // 2. Handle Video Constraints (Specific to getDisplayMedia)
+        if (isDisplay) {
+            const videoDefaults = {
+                width: { ideal: 1920, max: 1920 },
+                height: { ideal: 1080, max: 1080 },
+                frameRate: { ideal: 60, max: 60 }
+            };
+
+            if (!constraints.video || typeof constraints.video === 'boolean') {
+                constraints.video = videoDefaults;
+            } else {
+                Object.assign(constraints.video, videoDefaults);
+            }
+        }
+
+        return constraints;
+    };
+
+    // Override getUserMedia (Camera/Mic)
+    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+        console.log('%c[MediaOverride] Modifying getUserMedia constraints...', 'color: #00ff00');
+        const newConstraints = modifyConstraints(constraints);
+        return originalGetUserMedia(newConstraints);
+    };
+
+    // Override getDisplayMedia (Screen Share)
+    const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getDisplayMedia = async (constraints) => {
+        console.log('%c[MediaOverride] Modifying getDisplayMedia constraints...', 'color: #00ff00');
+        const newConstraints = modifyConstraints(constraints, true);
+        return originalGetDisplayMedia(newConstraints);
+    };
+
+    console.log('Media Stream Overrider Active: Filters Disabled & 1080p60 Enabled.');
 })();
