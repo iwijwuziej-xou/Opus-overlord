@@ -15,13 +15,13 @@
     // Brainstorming the "Enforcement" Targets:
     // We disable all 'goog' filters and force channelCount to 2 for Stereo.
     const AUDIO_RAW_STEREO = {
-        // Standard W3C
+        // Standard W3C (Modern Standards)
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: { ideal: 2, min: 2 },
         
-        // Chromium Internal (The "Secret Sauce")
+        // Chromium Internal (The "Secret Sauce" for Raw Audio)
         googAudioMirroring: true, // Forces 1:1 hardware mirroring
         googAutoGainControl: false,
         googAutoGainControl2: false,
@@ -46,6 +46,8 @@
 
     const patch = (constraints, isScreen) => {
         if (!constraints) return constraints;
+        
+        // Deep clone to ensure we don't pollute the original object context
         const c = JSON.parse(JSON.stringify(constraints));
 
         // Force Stereo & Mirroring
@@ -57,6 +59,8 @@
 
         // Force 1080p60
         if (c.video) {
+            // For screen share, we force full 1080p60. 
+            // For webcams, we prioritize 60fps fluidity.
             const videoBase = isScreen ? VIDEO_HQ : { frameRate: { ideal: 60 } };
             c.video = typeof c.video === 'object' ? { ...c.video, ...videoBase } : videoBase;
         }
@@ -65,16 +69,17 @@
     };
 
     // --- PROXY INTERCEPTION ---
+    // Sitting directly on the MediaDevices prototype ensures no site can bypass us.
 
     if (navigator.mediaDevices) {
-        // Intercept Mic/Cam
+        // Intercept Mic/Cam (getUserMedia)
         const originalGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
         navigator.mediaDevices.getUserMedia = async function(c) {
             console.log('%c[MediaOverride] Mic/Cam -> Forcing Raw Stereo & Mirroring', 'color: #00ff00; font-weight: bold;');
             return originalGUM(patch(c, false));
         };
 
-        // Intercept Screen Share
+        // Intercept Screen Share (getDisplayMedia)
         const originalGDM = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
         navigator.mediaDevices.getDisplayMedia = async function(c) {
             console.log('%c[MediaOverride] Screen Share -> Forcing 1080p60 & Stereo', 'color: #00d4ff; font-weight: bold;');
