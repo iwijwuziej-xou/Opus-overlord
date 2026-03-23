@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      6.4
 // @description  Universal Raw Audio Patch. No FEC/DTX, 384kbps @ 16kHz. Targets Mic Only.
-// @author       Coder & Gemini
+// @author       Coder
 // @match        *://*/*
 // @grant        unsafeWindow
 // @run-at       document-start
