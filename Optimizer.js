@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      6.2
 // @description  Targets Mic ONLY. Disables FEC/DTX, forces 384kbps @ 16kHz, enables googAudioMirroring.
-// @author       Coder & Gemini
+// @author       JavaScript Enstein
 // @match        *://*/*
 // @grant        unsafeWindow
 // @run-at       document-start
