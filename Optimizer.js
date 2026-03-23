@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Pure Filterless Mic & DisplayMedia
+// @name         Pure Filterless 16k Mic + 384k Opus + Mirroring (Mic Only)
 // @namespace    http://tampermonkey.net/
-// @version      4.0
-// @description  Strictly patches getUserMedia and getDisplayMedia for raw, filterless, mirrored stereo.
-// @author       Coder
+// @version      6.2
+// @description  Targets Mic ONLY. Disables FEC/DTX, forces 384kbps @ 16kHz, enables googAudioMirroring.
+// @author       Coder & Gemini
 // @match        *://*/*
 // @grant        unsafeWindow
 // @run-at       document-start
@@ -11,87 +11,70 @@
 
 (function() {
     'use strict';
-
-    // Accessing the real window to ensure our patch hits the browser's native code
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    /**
-     * BRAINSTORMING THE CORE CONSTRAINTS:
-     * To ensure "Filterless" operation while maintaining stereo integrity:
-     * - We disable all standard processing (EC, NS, AGC).
-     * - We disable all Chromium-specific processing (Highpass, Typing detection).
-     * - We force 'googAudioMirroring' to TRUE to protect the stereo field.
-     */
+    // --- 1. MICROPHONE CONSTRAINTS ---
     const getFilterlessConstraints = (constraints) => {
         if (!constraints || !constraints.audio) return constraints;
-
         const rawAudioSettings = {
-            // Disable all standard WebIDL filters
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
-
-            // Disable all internal Chromium filters
             googEchoCancellation: false,
             googAutoGainControl: false,
-            googAutoGainControl2: false,
             googNoiseSuppression: false,
             googHighpassFilter: false,
             googTypingNoiseDetection: false,
-            googNoiseReduction: false,
-
-            // Maintain Stereo/Raw integrity
-            googAudioMirroring: true, 
-            channelCount: { ideal: 2, exact: 2 },
-            sampleRate: { ideal: 48000 },
-            
-            // Performance/Latency
+            googAudioMirroring: true, // Keep stereo field intact
+            sampleRate: { ideal: 16000, exact: 16000 },
+            channelCount: { ideal: 2 },
             latency: 0
         };
-
-        // If audio was just 'true', replace with our object. 
-        // If it was an object, merge our raw settings over their requests.
+        
         if (typeof constraints.audio === 'boolean') {
             constraints.audio = rawAudioSettings;
         } else {
             Object.assign(constraints.audio, rawAudioSettings);
         }
-
         return constraints;
     };
 
-    // --- PATCH 1: Modern MediaDevices API ---
-    if (win.navigator.mediaDevices) {
-        // Patching Microphone/Camera access
-        const originalGUM = win.navigator.mediaDevices.getUserMedia.bind(win.navigator.mediaDevices);
-        win.navigator.mediaDevices.getUserMedia = function(constraints) {
-            const patched = getFilterlessConstraints(constraints);
-            console.log('[FILTERLESS] getUserMedia (Mic) triggered:', patched);
-            return originalGUM(patched);
-        };
+    // --- 2. SDP TRANSFORMATION (Bitrate & Filter Stripping) ---
+    const setHighBitrateRaw = (sdp) => {
+        return sdp.replace(/a=fmtp:(\d+) (.*)/g, (match, pt, params) => {
+            if (params.toLowerCase().includes('opus')) {
+                // Scrub existing restrictive parameters from the dump
+                let newParams = params
+                    .replace(/maxaveragebitrate=\d+;?/g, '')
+                    .replace(/useinbandfec=\d;?/g, '')
+                    .replace(/usedtx=\d;?/g, '')
+                    .replace(/maxplaybackrate=\d+;?/g, '')
+                    .replace(/sprop-maxcapturerate=\d+;?/g, '');
 
-        // Patching Screen Share/System Audio access
-        const originalGDM = win.navigator.mediaDevices.getDisplayMedia.bind(win.navigator.mediaDevices);
-        win.navigator.mediaDevices.getDisplayMedia = function(constraints) {
-            const patched = getFilterlessConstraints(constraints);
-            console.log('[FILTERLESS] getDisplayMedia (Display) triggered:', patched);
-            return originalGDM(patched);
-        };
+                // Inject high-fidelity 16kHz parameters
+                return `a=fmtp:${pt} ${newParams}maxaveragebitrate=384000;maxplaybackrate=16000;sprop-maxcapturerate=16000;stereo=1;sprop-stereo=1;useinbandfec=0;usedtx=0`.replace(/;+/g, ';');
+            }
+            return match;
+        });
+    };
+
+    // --- 3. PATCHING ---
+
+    // Patch Local Description for outgoing Opus quality
+    const origSetLocalDescription = win.RTCPeerConnection.prototype.setLocalDescription;
+    win.RTCPeerConnection.prototype.setLocalDescription = function(desc) {
+        if (desc && desc.sdp) {
+            desc.sdp = setHighBitrateRaw(desc.sdp);
+            console.log('[FILTERLESS] SDP Mic Patched: 16kHz, 384k, No FEC/DTX');
+        }
+        return origSetLocalDescription.apply(this, arguments);
+    };
+
+    // Patch getUserMedia (Microphone) ONLY - Screen share (getDisplayMedia) remains untouched
+    if (win.navigator.mediaDevices && win.navigator.mediaDevices.getUserMedia) {
+        const originalGUM = win.navigator.mediaDevices.getUserMedia.bind(win.navigator.mediaDevices);
+        win.navigator.mediaDevices.getUserMedia = (c) => originalGUM(getFilterlessConstraints(c));
     }
 
-    // --- PATCH 2: Legacy Navigator methods (Webkit support) ---
-    const legacyMethods = ['getUserMedia', 'webkitGetUserMedia', 'mozGetUserMedia'];
-    legacyMethods.forEach(method => {
-        if (win.navigator[method]) {
-            const original = win.navigator[method].bind(win.navigator);
-            win.navigator[method] = function(constraints, success, failure) {
-                const patched = getFilterlessConstraints(constraints);
-                return original(patched, success, failure);
-            };
-        }
-    });
-
-    console.log('[FILTERLESS] Initialization complete. Mic and DisplayMedia are now raw.');
-
+    console.log('[FILTERLESS] v6.2 Active: Mic Targeted, Screen Share Ignored.');
 })();
-
