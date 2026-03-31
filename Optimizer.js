@@ -57,7 +57,7 @@
                     .replace(/maxplaybackrate=\d+;?/, '')
                     .replace(/sprop-maxcapturerate=\d+;?/, '');
 
-                return `a=fmtp:${pt} ${newParams}maxaveragebitrate=384000;maxplaybackrate=16000;sprop-maxcapturerate=24000;stereo=1;sprop-stereo=1;useinbandfec=0;usedtx=0`.replace(/;+/g, ';');
+                return `a=fmtp:${pt} ${newParams}maxaveragebitrate=384000;maxplaybackrate=24000;sprop-maxcapturerate=24000;stereo=1;sprop-stereo=1;useinbandfec=0;usedtx=0`.replace(/;+/g, ';');
             }
             return match;
         });
