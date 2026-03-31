@@ -33,7 +33,7 @@
             
             // MAINTAINS RAW QUALITY
             googAudioMirroring: true, 
-            sampleRate: { ideal: 16000 },
+            sampleRate: { ideal: 24000 },
             channelCount: { ideal: 2 }
         };
 
