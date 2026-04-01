@@ -2,7 +2,7 @@
 // @name         Universal Filterless 24k + 384k Opus + Volume Lock
 // @namespace    http://tampermonkey.net/
 // @version      6.5
-// @description  Universal Raw Audio. 384kbps @ 16kHz. Disables all AGC/Volume control and filters.
+// @description  Universal Raw Audio. 384kbps @ 24kHz. Disables all AGC/Volume control and filters.
 // @author       Coder
 // @match        *://*/*
 // @grant        unsafeWindow
