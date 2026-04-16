@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Universal Filterless 48kHz + 384k Opus + Volume Lock
+// @name         Universal Filterless 48kHz + 384Kbps Opus + Volume Lock
 // @namespace    http://tampermonkey.net/
 // @version      6.5
 // @description  Universal Raw Audio. 384kbps @ 24kHz. Disables all AGC/Volume control and filters.
@@ -93,5 +93,5 @@
         console.error('[FILTERLESS] Critical Patching Failure:', e);
     }
 
-    console.log('[FILTERLESS] v6.5 Active: Filters DEAD | Volume LOCKED | Bitrate 384k');
+    console.log('[FILTERLESS] v6.5 Active: Filters DEAD | Volume LOCKED | Bitrate 384Kbps');
 })();
