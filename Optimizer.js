@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Universal Iron-Block v8.0: 24-bit/48kHz Raw Opus Dominance
+// @name         Universal Iron-Block v9.0: Adaptive 24-bit/48kHz & Filter Genocide
 // @namespace    http://tampermonkey.net/
-// @version      8.0
-// @description  Forces 24-bit 48kHz Raw Audio. 384kbps Stereo Opus. Kills ALL Chromium filters.
+// @version      9.0
+// @description  Universal Raw Audio. 384kbps @ 48kHz. Adaptive Bit-Depth. Kills all Chromium processing.
 // @author       Coder
 // @match        *://*/*
 // @grant        unsafeWindow
@@ -13,7 +13,7 @@
     'use strict';
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    // --- 1. THE BITRATE & 24-BIT ENFORCER ---
+    // --- 1. THE BITRATE & 48kHz ENFORCER ---
     const upgradeSDP = (sdp) => {
         if (!sdp || typeof sdp !== 'string') return sdp;
 
@@ -26,17 +26,14 @@
                     .replace(/useinbandfec=\d;?/g, '')
                     .replace(/usedtx=\d;?/g, '');
 
-                // maxaveragebitrate=384000 (384kbps)
-                // stereo=1 / sprop-stereo=1 (Forced 2-Channel)
-                // cbr=1 (Constant Bitrate for zero dips)
-                // maxplaybackrate=48000 / sprop-maxcapturerate=48000 (Forced 48kHz)
+                // FORCES 384kbps, Stereo, and 48kHz Playback/Capture rates
                 return `a=fmtp:${pt} ${cleanParams}maxaveragebitrate=384000;stereo=1;sprop-stereo=1;cbr=1;maxplaybackrate=48000;sprop-maxcapturerate=48000;useinbandfec=0;usedtx=0`.replace(/;+/g, ';');
             }
             return match;
         });
     };
 
-    // --- 2. THE ENGINE PATCHES (Local & Remote Descriptions) ---
+    // --- 2. ENGINE PATCHES (Local & Remote) ---
     try {
         if (win.RTCPeerConnection) {
             const patchDesc = (proto, name) => {
@@ -44,7 +41,6 @@
                 proto[name] = function(desc) {
                     if (desc && desc.sdp) {
                         desc.sdp = upgradeSDP(desc.sdp);
-                        console.log(`%c[IRON-BLOCK] ${name} Patched: 384kbps/48kHz Stereo`, 'color: #00ff00; font-weight: bold;');
                     }
                     return orig.apply(this, arguments);
                 };
@@ -53,31 +49,30 @@
             patchDesc(win.RTCPeerConnection.prototype, 'setRemoteDescription');
         }
 
-        // --- 3. THE MIC CONSTRAINTS (Filter Genocide & 24-bit/48kHz Force) ---
+        // --- 3. THE MIC CONSTRAINTS (Adaptive Hardware + Filter Death) ---
         if (win.navigator.mediaDevices && win.navigator.mediaDevices.getUserMedia) {
             const originalGUM = win.navigator.mediaDevices.getUserMedia.bind(win.navigator.mediaDevices);
             win.navigator.mediaDevices.getUserMedia = (constraints) => {
                 if (constraints && constraints.audio) {
                     const ironBlockAudio = {
-                        // FORCE HIGH RES HARDWARE SPECS
-                        channelCount: { exact: 2 },
-                        sampleRate: { exact: 48000 },
-                        sampleSize: { exact: 24 }, // FORCES 24-BIT DEPTH
-                        latency: 0,
+                        // ADAPTIVE HARDWARE (Prevents crashing on 16-bit mics)
+                        channelCount: { ideal: 2 },
+                        sampleRate: { ideal: 48000 },
+                        sampleSize: { ideal: 24 }, // Requests 24-bit, falls back to 16-bit if needed
                         
-                        // KILLS ALL CHROMIUM PROCESSING (SET TO FALSE)
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false,
+                        // ABSOLUTE FILTER GENOCIDE (Set to FALSE to kill processing)
+                        echoCancellation: { exact: false },
+                        noiseSuppression: { exact: false },
+                        autoGainControl: { exact: false },
                         
-                        // GOOG SPECIFIC REGISTERS (DEATH TO FILTERS)
+                        // GOOG SPECIFIC REGISTERS
                         googAutoGainControl: false,
                         googAutoGainControl2: false,
                         googNoiseSuppression: false,
                         googHighpassFilter: false,
                         googEchoCancellation: false,
                         googTypingNoiseDetection: false,
-                        googAudioMirroring: true, // Prevents phase flipping
+                        googAudioMirroring: true, 
                         googNoiseReduction: false
                     };
 
@@ -86,7 +81,7 @@
                     } else {
                         Object.assign(constraints.audio, ironBlockAudio);
                     }
-                    console.log('%c[IRON-BLOCK] getUserMedia Intercepted: ALL FILTERS DEAD.', 'color: #ff00ff;');
+                    console.log('%c[IRON-BLOCK] Constraints Applied. Hardware: Adaptive | Filters: DEAD', 'color: #00ff00; font-weight: bold;');
                 }
                 return originalGUM(constraints);
             };
