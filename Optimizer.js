@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Universal Filterless 48kHz + 384Kbps Opus + Volume Lock
+// @name         Universal Filterless v7.0: 384kbps + Force Remote Stereo + AGC Kill
 // @namespace    http://tampermonkey.net/
-// @version      6.5
-// @description  Universal Raw Audio. 384kbps @ 48kHz. Disables all AGC/Volume control and filters.
+// @version      7.0
+// @description  Full WebRTC Overhaul. Forced 384kbps Stereo Opus. Overrides Remote Constraints & Kills all filters.
 // @author       Coder
 // @match        *://*/*
 // @grant        unsafeWindow
@@ -13,85 +13,85 @@
     'use strict';
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    // --- 1. THE CONSTRAINTS (Kill Filters & Volume Control) ---
-    const getFilterlessConstraints = (constraints) => {
-        if (!constraints || !constraints.audio) return constraints;
-        
-        const rawAudioSettings = {
-            // STOPS WEBSITE FROM CHANGING MIC VOLUME
-            autoGainControl: false, 
-            googAutoGainControl: false,
-            googAutoGainControl2: false,
-            
-            // KILLS FILTERS
-            echoCancellation: false,
-            noiseSuppression: false,
-            googEchoCancellation: false,
-            googNoiseSuppression: false,
-            googHighpassFilter: false,
-            googTypingNoiseDetection: false,
-            
-            // MAINTAINS RAW QUALITY
-            googAudioMirroring: true, 
-            sampleRate: { ideal: 48000 },
-            channelCount: { ideal: 2 }
-        };
+    // --- 1. THE BITRATE & STEREO ENFORCER ---
+    const upgradeSDP = (sdp) => {
+        if (!sdp || typeof sdp !== 'string') return sdp;
 
-        if (typeof constraints.audio === 'boolean') {
-            constraints.audio = rawAudioSettings;
-        } else {
-            // Overwrite existing constraints to ensure our "false" settings stick
-            Object.assign(constraints.audio, rawAudioSettings);
-        }
-        return constraints;
-    };
-
-    // --- 2. THE SDP TRANSFORMER (The Bitrate Enforcer) ---
-    const setHighBitrateRaw = (sdp) => {
         return sdp.replace(/a=fmtp:(\d+) (.*)/g, (match, pt, params) => {
             if (params.toLowerCase().includes('opus')) {
-                let newParams = params
+                // Remove existing limits
+                let cleanParams = params
                     .replace(/maxaveragebitrate=\d+;?/g, '')
+                    .replace(/stereo=\d;?/g, '')
+                    .replace(/sprop-stereo=\d;?/g, '')
                     .replace(/useinbandfec=\d;?/g, '')
-                    .replace(/usedtx=\d;?/g, '')
-                    .replace(/maxplaybackrate=\d+;?/, '')
-                    .replace(/sprop-maxcapturerate=\d+;?/, '');
+                    .replace(/usedtx=\d;?/g, '');
 
-                return `a=fmtp:${pt} ${newParams}maxaveragebitrate=384000;maxplaybackrate=48000;sprop-maxcapturerate=48000;stereo=1;sprop-stereo=1;useinbandfec=0;usedtx=0`.replace(/;+/g, ';');
+                // Inject 384kbps + Forced Stereo Logic
+                // stereo=1: We WANT to receive stereo.
+                // sprop-stereo=1: We ARE sending stereo.
+                return `a=fmtp:${pt} ${cleanParams}maxaveragebitrate=384000;stereo=1;sprop-stereo=1;cbr=1;useinbandfec=0;usedtx=0`.replace(/;+/g, ';');
             }
             return match;
         });
     };
 
-    // --- 3. APPLY ENGINE PATCHES ---
+    // --- 2. ENGINE PATCHES (Local & Remote) ---
     try {
-        // Patch RTCPeerConnection for Bitrate
         if (win.RTCPeerConnection) {
-            const origSetLocalDescription = win.RTCPeerConnection.prototype.setLocalDescription;
+            // PATCH: Local Description (What YOU send)
+            const origSetLocal = win.RTCPeerConnection.prototype.setLocalDescription;
             win.RTCPeerConnection.prototype.setLocalDescription = function(desc) {
                 if (desc && desc.sdp) {
-                    desc.sdp = setHighBitrateRaw(desc.sdp);
-                    console.log('%c[FILTERLESS] Handshake Patched: 384kbps & Volume Locked', 'color: #00ff00; font-weight: bold;');
+                    desc.sdp = upgradeSDP(desc.sdp);
+                    console.log('%c[IRON-BLOCK] Local SDP Patched: 384kbps Stereo Engaged', 'color: #00ff00; font-weight: bold;');
                 }
-                return origSetLocalDescription.apply(this, arguments);
+                return origSetLocal.apply(this, arguments);
+            };
+
+            // PATCH: Remote Description (What THEY receive/expect)
+            // This forces the other side's "listener" to open its ears for a 384k stereo signal
+            const origSetRemote = win.RTCPeerConnection.prototype.setRemoteDescription;
+            win.RTCPeerConnection.prototype.setRemoteDescription = function(desc) {
+                if (desc && desc.sdp) {
+                    desc.sdp = upgradeSDP(desc.sdp);
+                    console.log('%c[IRON-BLOCK] Remote SDP Overridden: Forcing Incoming Stereo/384k', 'color: #00ffff; font-weight: bold;');
+                }
+                return origSetRemote.apply(this, arguments);
             };
         }
 
-        // Patch getUserMedia for Raw Input & AGC Kill
+        // --- 3. THE MIC CONSTRAINTS (Filter Genocide) ---
         if (win.navigator.mediaDevices && win.navigator.mediaDevices.getUserMedia) {
             const originalGUM = win.navigator.mediaDevices.getUserMedia.bind(win.navigator.mediaDevices);
-            win.navigator.mediaDevices.getUserMedia = (c) => {
-                const patched = getFilterlessConstraints(c);
-                console.log('[FILTERLESS] getUserMedia Request intercepted.');
-                return originalGUM(patched).catch(e => {
-                    console.warn('[FILTERLESS] Constraint error, falling back to default.', e);
-                    return originalGUM(c);
-                });
+            win.navigator.mediaDevices.getUserMedia = (constraints) => {
+                if (constraints && constraints.audio) {
+                    const rawAudio = {
+                        autoGainControl: false,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        channelCount: 2, // Forced 2-channel
+                        sampleRate: 48000,
+                        latency: 0,
+                        // Chrome-specific legacy flags
+                        googAutoGainControl: false,
+                        googNoiseSuppression: false,
+                        googHighpassFilter: false,
+                        googEchoCancellation: false,
+                        googAudioMirroring: true
+                    };
+
+                    if (typeof constraints.audio === 'boolean') {
+                        constraints.audio = rawAudio;
+                    } else {
+                        Object.assign(constraints.audio, rawAudio);
+                    }
+                    console.log('%c[IRON-BLOCK] Filters Terminated. Raw 48kHz Stream Active.', 'color: #ff00ff;');
+                }
+                return originalGUM(constraints);
             };
         }
     } catch (e) {
-        console.error('[FILTERLESS] Critical Patching Failure:', e);
+        console.error('[IRON-BLOCK] Critical Patch Failure:', e);
     }
-
-    console.log('[FILTERLESS] v6.5 Active: Filters DEAD | Volume LOCKED | Bitrate 384Kbps');
 })();
