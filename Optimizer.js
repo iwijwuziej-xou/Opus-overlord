@@ -1,19 +1,27 @@
 // ==UserScript==
-// @name         Universal Iron-Block v10.0: 24-bit/48kHz Absolute Filter Genocide
+// @name         Universal Iron-Block: 24-bit/48kHz Absolute Filter Genocide
 // @namespace    http://tampermonkey.net/
-// @version      10.0
-// @description  Universal Raw Audio. 384kbps @ 48kHz. Kills ALL filters with absolute force.
+// @version      11.0
+// @description  Universal Raw Audio. 384kbps @ 48kHz. Adaptive Bit-Depth. Kills all Chromium filters globally.
 // @author       Coder
 // @match        *://*/*
 // @grant        unsafeWindow
 // @run-at       document-start
+// @license      MIT
+// @updateURL    https://raw.githubusercontent.com/iwijwuziej-xou/Universal-Media-Stream-Optimizer/refs/heads/main/Optimizer.js
+// @downloadURL  https://raw.githubusercontent.com/iwijwuziej-xou/Universal-Media-Stream-Optimizer/refs/heads/main/Optimizer.js
 // ==/UserScript==
+
+/* MIT License
+  Copyright (c) 2026 Iron-Block Brotherhood
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software...
+*/
 
 (function() {
     'use strict';
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    // --- 1. THE BITRATE & STEREO ENFORCER (SDP) ---
+    // --- 1. THE BITRATE & 48kHz ENFORCER (SDP Handshake) ---
     const upgradeSDP = (sdp) => {
         if (!sdp || typeof sdp !== 'string') return sdp;
         return sdp.replace(/a=fmtp:(\d+) (.*)/g, (match, pt, params) => {
@@ -25,7 +33,7 @@
         });
     };
 
-    // --- 2. THE ENGINE PATCHES ---
+    // --- 2. THE ENGINE PATCHES (Local & Remote) ---
     try {
         if (win.RTCPeerConnection) {
             ['setLocalDescription', 'setRemoteDescription'].forEach(name => {
@@ -37,24 +45,18 @@
             });
         }
 
-        // --- 3. THE MIC CONSTRAINTS (The "Genocide" Logic) ---
+        // --- 3. THE MIC CONSTRAINTS (Adaptive 24-bit + Absolute Genocide) ---
         if (win.navigator.mediaDevices && win.navigator.mediaDevices.getUserMedia) {
             const originalGUM = win.navigator.mediaDevices.getUserMedia.bind(win.navigator.mediaDevices);
             win.navigator.mediaDevices.getUserMedia = (constraints) => {
                 if (constraints && constraints.audio) {
                     const genocide = {
-                        // HARDWARE SPECS (Adaptive)
                         channelCount: { ideal: 2 },
                         sampleRate: { ideal: 48000 },
                         sampleSize: { ideal: 24 },
-                        
-                        // W3C FILTERS: FORCED OFF
                         echoCancellation: { exact: false },
                         noiseSuppression: { exact: false },
                         autoGainControl: { exact: false },
-
-                        // LEGACY CHROMIUM FILTERS: ABSOLUTE FALSE
-                        // We use direct booleans here because "exact" doesn't apply to legacy "goog" flags
                         googEchoCancellation: false,
                         googAutoGainControl: false,
                         googAutoGainControl2: false,
@@ -62,23 +64,19 @@
                         googHighpassFilter: false,
                         googTypingNoiseDetection: false,
                         googNoiseReduction: false,
-                        googAudioMirroring: true, // Keep stereo channels aligned
-                        
-                        // 2026 SPECIFIC: VOIP MODES
-                        voiceIsolation: false,
-                        systemAudioLoopback: false
+                        googAudioMirroring: true,
+                        voiceIsolation: false
                     };
 
                     if (typeof constraints.audio === 'boolean') {
                         constraints.audio = genocide;
                     } else {
-                        // Merge and prioritize our genocide constraints
                         Object.assign(constraints.audio, genocide);
                     }
-                    console.log('%c[IRON-BLOCK] Filter Genocide Successful. Raw 48kHz Stream Locked.', 'color: #ff00ff; font-weight: bold;');
+                    console.log('%c[IRON-BLOCK] v11.0: GitHub Sync Active. Filter Genocide Engaged.', 'color: #00ff00; font-weight: bold;');
                 }
                 return originalGUM(constraints);
             };
         }
-    } catch (e) { console.error('[IRON-BLOCK] Failure:', e); }
+    } catch (e) { console.error('[IRON-BLOCK] Patch Failure:', e); }
 })();
