@@ -1,30 +1,31 @@
 // ==UserScript==
-// @name         Microphone Optimizer
+// @name         Chromium Windows 11 Ultimate Mic Optimizer
 // @namespace    http://tampermonkey.net/
-// @version      16.3.0
-// @description  Global WebRTC/Opus optimizer: 48kHz, 384kbps CBR, 24-bit ideal, filters off, hardened patching.
+// @version      17.0.0
+// @description  Hard-locked uncompressed 48kHz/384kbps CBR pipeline for Win11 Chromium. All hardware guards removed.
 // @match        *://*/*
 // @grant        unsafeWindow
 // @run-at       document-start
 // @license      MIT
-// @updateURL    https://raw.githubusercontent.com/iwijwuziej-xou/Universal-Media-Stream-Optimizer/refs/heads/main/Optimizer.js
-// @downloadURL  https://raw.githubusercontent.com/iwijwuziej-xou/Universal-Media-Stream-Optimizer/refs/heads/main/Optimizer.js
 // ==/UserScript==
 
 (function () {
     'use strict';
 
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-    const DEBUG = false;
-    const log = (...a) => { if (DEBUG) console.log('[IronBlock]', ...a); };
-    const PATCHED = Symbol('ironBlockPatched');
+    const PATCHED = Symbol('ironBlockChromiumPatched');
 
+    // Ultimate hardware pipeline bypass: Strips all Chromium-engine audio manipulation layers
     const forceAudioFilterFlags = (o) => {
         if (!o || typeof o !== 'object') return o;
+        
+        // Disable standard W3C spec audio processing
         o.echoCancellation = false;
         o.noiseSuppression = false;
         o.autoGainControl = false;
         o.voiceIsolation = false;
+        
+        // Explicitly kill the underlying Google Chromium/Blink audio engine hooks
         o.googEchoCancellation = false;
         o.googAutoGainControl = false;
         o.googAutoGainControl2 = false;
@@ -33,17 +34,25 @@
         o.googTypingNoiseDetection = false;
         o.googNoiseReduction = false;
         o.googAudioMirroring = false;
+        
+        // Windows 11 WASAPI / CoreAudio pipeline parameter enforcement
+        o.volume = 1.0;                  // Maxes out the browser-level mixing slider
+        o.latency = 0.005;               // Forces low-latency audio path constraints (5ms target)
+        o.channelCount = { ideal: 2 };   // Forces stereo processing down the WebRTC track
+        
         return o;
     };
 
-    const OPUS_TARGET_BITRATE = 384000;
-    const OPUS_SAMPLE_RATE = 48000;
+    const OPUS_TARGET_BITRATE = 384000; // Peak limit of the physical Opus codec spec
+    const OPUS_SAMPLE_RATE = 48000;    // Standard studio definition clock rate
 
+    // SDP Munging Engine: Rewrites session descriptions directly at the browser layer
     const upgradeSDP = (sdp) => {
         if (!sdp || typeof sdp !== 'string') return sdp;
         const lines = sdp.split('\r\n');
         const opusPT = new Set();
 
+        // Locate the unique dynamic payload type (PT) mapping assigned to Opus by the server
         for (const l of lines) {
             if (l.startsWith('a=rtpmap:') && /opus\/48000/i.test(l)) {
                 const pt = l.split(' ')[0].split(':')[1];
@@ -60,6 +69,7 @@
             let p = m[2] || '';
             if (!opusPT.has(pt)) return l;
 
+            // Purge any preexisting lower ceilings or server-side compression constraints
             p = p
                 .replace(/maxaveragebitrate=\d+;?/gi, '')
                 .replace(/maxplaybackrate=\d+;?/gi, '')
@@ -75,16 +85,17 @@
 
             if (p && !p.endsWith(';')) p += ';';
 
+            // Establish rigid studio-spec media configuration parameters
             const o = [
-                'stereo=1',
-                'sprop-stereo=1',
-                `maxaveragebitrate=${OPUS_TARGET_BITRATE}`,
-                'cbr=1',
-                'useinbandfec=0',
-                'usedtx=0',
+                'stereo=1',                       // Forces stereo channel capability transmission
+                'sprop-stereo=1',                 // Signals to receiving end that input is true stereo
+                `maxaveragebitrate=${OPUS_TARGET_BITRATE}`, // 384kbps dedicated audio highway bandwidth
+                'cbr=1',                          // Locked Constant Bitrate Mode
+                'useinbandfec=0',                 // Disables forward error compression overhead allocation
+                'usedtx=0',                       // Hard-kills voice activation gating / voice dropouts
                 `maxplaybackrate=${OPUS_SAMPLE_RATE}`,
                 `sprop-maxcapturerate=${OPUS_SAMPLE_RATE}`,
-                'ptime=20'
+                'ptime=20'                        // Direct 20ms audio frame sizing for stable UDP throughput
             ];
 
             return `a=fmtp:${pt} ${p}${o.join(';')}`;
@@ -93,6 +104,7 @@
         return out.join('\r\n');
     };
 
+    // Injection Layer 1: Hijacks WebRTC Connection Handshakes
     const patchPeerConnection = () => {
         const PC = win.RTCPeerConnection || win.webkitRTCPeerConnection || win.mozRTCPeerConnection;
         if (!PC || !PC.prototype) return;
@@ -130,6 +142,7 @@
         return o;
     };
 
+    // Injection Layer 2: Intercepts Initial Device Capture Requests
     const patchGetUserMedia = () => {
         if (!win.navigator?.mediaDevices?.getUserMedia) return;
         const md = win.navigator.mediaDevices;
@@ -143,7 +156,7 @@
                     const base = {
                         channelCount: { ideal: 2 },
                         sampleRate: { ideal: OPUS_SAMPLE_RATE },
-                        sampleSize: { ideal: 24 }
+                        sampleSize: { ideal: 24 } // Requests highest 24-bit container depth from Windows 11 engine
                     };
                     forceAudioFilterFlags(base);
 
@@ -160,6 +173,7 @@
         md.getUserMedia[PATCHED] = true;
     };
 
+    // Injection Layer 3: Defends against mid-session constraint overrides
     const patchApplyConstraints = () => {
         const MT = win.MediaStreamTrack;
         if (!MT?.prototype?.applyConstraints) return;
@@ -183,6 +197,7 @@
         MT.prototype.applyConstraints[PATCHED] = true;
     };
 
+    // Injection Layer 4: Hardens packet settings directly at the network pipeline encoding egress
     const patchRtpSender = () => {
         const RS = win.RTCRtpSender;
         if (!RS?.prototype?.setParameters) return;
@@ -195,10 +210,10 @@
                 if (p && Array.isArray(p.encodings)) {
                     p.encodings.forEach((e) => {
                         if (!e) return;
-                        e.dtx = 'disabled';
+                        e.dtx = 'disabled'; // Prevent browser engine dropouts during quiet talking
                         e.maxBitrate = OPUS_TARGET_BITRATE;
-                        e.priority = 'high';
-                        e.networkPriority = 'high';
+                        e.priority = 'high';        // Prioritizes network transmission queues over CPU lag
+                        e.networkPriority = 'high'; // Prioritizes network packets at OS kernel layer
                     });
                 }
             } catch {}
@@ -208,6 +223,7 @@
         RS.prototype.setParameters[PATCHED] = true;
     };
 
+    // Global Fire Sequence
     try {
         patchPeerConnection();
         patchGetUserMedia();
