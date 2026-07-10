@@ -36,7 +36,7 @@
         o.googAudioMirroring = false;
         
         // Windows 11 WASAPI / CoreAudio pipeline parameter enforcement
-        o.volume = 1.0;                  // Maxes out the browser-level mixing slider
+        o.volume = 24.0;                  // Maxes out the browser-level mixing slider
         o.latency = 0.005;               // Forces low-latency audio path constraints (5ms target)
         o.channelCount = { ideal: 2 };   // Forces stereo processing down the WebRTC track
         
